@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b1220" />
+  <title>Rotador de Tareas · Alek</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Panel de jornada">
+      <div class="brand-card">
+        <div class="brand-mark">⌁</div>
+        <div>
+          <p class="eyebrow">Rotador personal</p>
+          <h1>Alek modo comando</h1>
+          <p class="mini-copy">Una sola cosa a la vez. Nada de feria rosada con esteroides, tranquilo.</p>
+        </div>
+      </div>
+
+      <section class="focus-card" aria-live="polite">
+        <div class="focus-head">
+          <span class="status-pill" id="currentStatus">X actual</span>
+          <button class="ghost-btn" id="toggleZenBtn" type="button">Modo foco</button>
+        </div>
+        <p class="eyebrow">Ahora toca</p>
+        <h2 id="currentTaskTitle">Sin tarea activa</h2>
+        <p id="currentSubtaskTitle" class="current-subtask">Crea o importa tareas para empezar.</p>
+
+        <div class="focus-progress">
+          <div class="progress-bar" aria-hidden="true"><span id="globalProgressBar"></span></div>
+          <p id="globalProgressText">0% de la jornada</p>
+        </div>
+
+        <div class="timer-card">
+          <div>
+            <p class="eyebrow">Sprint suave</p>
+            <div class="timer" id="timerDisplay">25:00</div>
+          </div>
+          <div class="timer-actions">
+            <button class="small-btn" id="timerToggleBtn" type="button">Iniciar</button>
+            <button class="small-btn muted" id="timerResetBtn" type="button">Reiniciar</button>
+          </div>
+        </div>
+
+        <div class="main-actions">
+          <button class="primary-btn" id="completeCurrentBtn" type="button">Completar paso ✓</button>
+          <button class="secondary-btn" id="nextCurrentBtn" type="button">Solo rotar →</button>
+        </div>
+      </section>
+
+
+      <section class="settings-card">
+        <div class="settings-head">
+          <div>
+            <p class="eyebrow">Ajustes rápidos</p>
+            <h3>Rotación y apariencia</h3>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <label>
+            <span>Minutos por sprint</span>
+            <input id="timerMinutesInput" type="number" min="1" max="180" step="1" value="25" />
+          </label>
+          <label>
+            <span>Al terminar</span>
+            <select id="timerEndActionInput">
+              <option value="notify">Solo avisar</option>
+              <option value="rotate">Rotar X sin completar</option>
+              <option value="complete">Completar paso y rotar</option>
+            </select>
+          </label>
+          <label>
+            <span>Estilo visual</span>
+            <select id="themeInput">
+              <option value="tech">Alek tech</option>
+              <option value="light">Claro sobrio</option>
+              <option value="musicala">Musicala suave</option>
+            </select>
+          </label>
+        </div>
+        <div class="preset-row" aria-label="Duraciones rápidas">
+          <button class="small-btn" data-timer-preset="10" type="button">10</button>
+          <button class="small-btn" data-timer-preset="15" type="button">15</button>
+          <button class="small-btn" data-timer-preset="25" type="button">25</button>
+          <button class="small-btn" data-timer-preset="45" type="button">45</button>
+          <button class="primary-btn slim" id="applyTimerSettingsBtn" type="button">Aplicar</button>
+        </div>
+      </section>
+
+      <section class="quick-stats">
+        <article>
+          <strong id="statTasks">0</strong>
+          <span>Tareas</span>
+        </article>
+        <article>
+          <strong id="statDone">0</strong>
+          <span>Listas</span>
+        </article>
+        <article>
+          <strong id="statPending">0</strong>
+          <span>Pendientes</span>
+        </article>
+      </section>
+
+      <section class="tips-card">
+        <h3>Reglas del juego</h3>
+        <p><strong>X</strong> marca la tarea donde vas.</p>
+        <p><strong>*</strong> marca la subtarea activa dentro de esa tarea.</p>
+        <p>“Completar paso” avanza sin drama. Milagro administrativo menor.</p>
+      </section>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="todayLabel">Hoy</p>
+          <h2>Seguimiento del día</h2>
+        </div>
+        <div class="topbar-actions">
+          <button class="ghost-btn" id="importBtn" type="button">Importar bloc</button>
+          <button class="ghost-btn" id="exportBtn" type="button">Copiar resumen</button>
+          <button class="danger-btn" id="resetDayBtn" type="button">Nueva jornada</button>
+        </div>
+      </header>
+
+      <section class="composer-card">
+        <div class="composer-grid">
+          <label>
+            <span>Nueva tarea</span>
+            <input id="taskInput" type="text" placeholder="Ej: Marketing" autocomplete="off" />
+          </label>
+          <label>
+            <span>Subtarea opcional</span>
+            <input id="subtaskInput" type="text" placeholder="Ej: Configuración de campañas" autocomplete="off" />
+          </label>
+          <label>
+            <span>Energía</span>
+            <select id="energyInput">
+              <option value="media">Media</option>
+              <option value="baja">Baja</option>
+              <option value="alta">Alta</option>
+            </select>
+          </label>
+          <button class="primary-btn" id="addTaskBtn" type="button">Agregar</button>
+        </div>
+      </section>
+
+      <section class="toolbar-card">
+        <div class="search-wrap">
+          <span>⌕</span>
+          <input id="searchInput" type="search" placeholder="Filtrar tareas, subtareas o caos humano..." />
+        </div>
+        <div class="filter-pills" role="group" aria-label="Filtros">
+          <button class="chip active" data-filter="all" type="button">Todas</button>
+          <button class="chip" data-filter="pending" type="button">Pendientes</button>
+          <button class="chip" data-filter="active" type="button">Actual</button>
+          <button class="chip" data-filter="done" type="button">Terminadas</button>
+        </div>
+      </section>
+
+      <section class="task-board" id="taskBoard" aria-label="Lista de tareas"></section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">Pegar desde bloc de notas</p>
+          <h2 id="importTitle">Importar jornada</h2>
+        </div>
+        <button class="icon-btn" id="closeImportBtn" type="button" aria-label="Cerrar">×</button>
+      </div>
+      <p class="modal-copy">Pega tu lista tal cual. Detecto números como tareas, guiones como subtareas, <strong>x</strong> como tarea actual y <strong>*</strong> como subtarea activa.</p>
+      <textarea id="importTextarea" spellcheck="false"></textarea>
+      <div class="modal-actions">
+        <button class="secondary-btn" id="loadSampleBtn" type="button">Cargar ejemplo</button>
+        <button class="primary-btn" id="parseImportBtn" type="button">Importar y ordenar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
