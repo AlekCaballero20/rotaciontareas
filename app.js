@@ -1,534 +1,486 @@
-const STORAGE_KEY = 'rotador_tdah_alek_v3';
-const TIMER_KEY = 'rotador_tdah_alek_timer_v2';
+const STORAGE_KEY   = 'rotador_urgente_alek_v1';
+const TIMER_KEY     = 'rotador_urgente_alek_timer_v1';
+const DOPAMINE_KEY  = 'rotador_dopamine_v1';
+const COMBO_WINDOW_MS  = 12_000;
+const CONFETTI_COLORS  = ['#2563eb','#7c3aed','#ec4899','#f59e0b','#10b981','#0ea5e9'];
 
-const sampleText = `Seguimiento de tareas del día
-0. Apps personal y laboral
-1. Vacante (mejorar video brief)
-- Linked in (hacer retroalimentaciones de Viva correo, cambiar foto)
-- Indeed
-- Computrabajo *
-- Cursos de música
-- Cursos extra
-- Material pedagógico para vender (libros para colorear)
-- Cursos de artes
-- Espíritu floral
-- Pasifae skincare
-1. Secretaría
-2. Checklist
-• Salvemoslos del reggaetón minuto a minuto *
-• Salvemoslos partituras
-3. Bloc de notas
-4. Organización física/sede
-5. Marketing x
-- Configuración de campañas
-- Creación de contenido *`;
+const sampleText = `1. Marketing x
+- Revisar presupuesto de Google Ads *
+- Crear anuncio
+- Responder leads
+2. Musicala
+- Revisar pagos urgentes
+- Confirmar horarios
+3. Personal
+- Hacer llamada pendiente`;
 
-const defaultState = {
-  date: todayKey(),
-  activeTaskId: null,
-  filter: 'all',
-  search: '',
-  settings: {
-    theme: 'tech'
-  },
-  tasks: []
-};
+const defaultState = { date: todayKey(), activeTaskId: null, filter: 'all', search: '', tasks: [] };
+const defaultTimer  = { durationMinutes: 15, seconds: 15 * 60, running: false };
 
-let state = loadState();
-let timerState = loadTimer();
+let state         = loadState();
+let timerState    = loadTimer();
 let timerInterval = null;
+let toastTimeout  = null;
+let particleFrame = null;
+let dopamineState = loadDopamine();
 
-const $ = (selector) => document.querySelector(selector);
-const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+const $  = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
 
 const els = {
-  todayLabel: $('#todayLabel'),
-  currentStatus: $('#currentStatus'),
-  currentTaskTitle: $('#currentTaskTitle'),
-  currentSubtaskTitle: $('#currentSubtaskTitle'),
-  globalProgressBar: $('#globalProgressBar'),
-  globalProgressText: $('#globalProgressText'),
-  statTasks: $('#statTasks'),
-  statDone: $('#statDone'),
-  statPending: $('#statPending'),
-  taskBoard: $('#taskBoard'),
-  taskInput: $('#taskInput'),
-  subtaskInput: $('#subtaskInput'),
-  energyInput: $('#energyInput'),
-  addTaskBtn: $('#addTaskBtn'),
-  searchInput: $('#searchInput'),
-  importBtn: $('#importBtn'),
-  exportBtn: $('#exportBtn'),
-  resetDayBtn: $('#resetDayBtn'),
-  importModal: $('#importModal'),
-  closeImportBtn: $('#closeImportBtn'),
-  importTextarea: $('#importTextarea'),
-  parseImportBtn: $('#parseImportBtn'),
-  loadSampleBtn: $('#loadSampleBtn'),
-  completeCurrentBtn: $('#completeCurrentBtn'),
-  nextCurrentBtn: $('#nextCurrentBtn'),
-  toggleZenBtn: $('#toggleZenBtn'),
-  timerDisplay: $('#timerDisplay'),
-  timerToggleBtn: $('#timerToggleBtn'),
-  timerResetBtn: $('#timerResetBtn'),
-  timerMinutesInput: $('#timerMinutesInput'),
-  timerEndActionInput: $('#timerEndActionInput'),
-  applyTimerSettingsBtn: $('#applyTimerSettingsBtn'),
-  themeInput: $('#themeInput'),
-  toast: $('#toast')
+  todayLabel:        $('#todayLabel'),
+  activeBadge:       $('#activeBadge'),
+  currentTaskTitle:  $('#currentTaskTitle'),
+  currentStepTitle:  $('#currentStepTitle'),
+  progressText:      $('#progressText'),
+  progressBar:       $('#progressBar'),
+  activeSubtaskForm: $('#activeSubtaskForm'),
+  activeSubtaskInput:$('#activeSubtaskInput'),
+  completeCurrentBtn:$('#completeCurrentBtn'),
+  rotateBtn:         $('#rotateBtn'),
+  focusModeBtn:      $('#focusModeBtn'),
+  timerDisplay:      $('#timerDisplay'),
+  timerToggleBtn:    $('#timerToggleBtn'),
+  timerResetBtn:     $('#timerResetBtn'),
+  statTasks:         $('#statTasks'),
+  statPendingSteps:  $('#statPendingSteps'),
+  statDoneSteps:     $('#statDoneSteps'),
+  taskInput:         $('#taskInput'),
+  firstStepInput:    $('#firstStepInput'),
+  priorityInput:     $('#priorityInput'),
+  addTaskBtn:        $('#addTaskBtn'),
+  searchInput:       $('#searchInput'),
+  importBtn:         $('#importBtn'),
+  copyBtn:           $('#copyBtn'),
+  resetBtn:          $('#resetBtn'),
+  taskBoard:         $('#taskBoard'),
+  importModal:       $('#importModal'),
+  closeImportBtn:    $('#closeImportBtn'),
+  importTextarea:    $('#importTextarea'),
+  parseImportBtn:    $('#parseImportBtn'),
+  sampleBtn:         $('#sampleBtn'),
+  streakBar:         $('#streakBar'),
+  toast:             $('#toast'),
 };
 
 init();
 
+// ─── INIT ────────────────────────────────────────────────────────────────────
+
 function init() {
   migrateStateShape();
-
-  if (!state.tasks.length) {
-    const parsed = parseBlocText(sampleText);
-    state.tasks = parsed.tasks;
-    state.activeTaskId = parsed.activeTaskId;
-    ensureActivePointer();
-    saveState();
-  }
-
-  applyTheme();
-  bindEvents();
+  ensureActivePointer();
   setTodayLabel();
-  syncSettingsInputs();
+  bindEvents();
   render();
-  setupPwa();
   updateTimerDisplay();
+  updateTimerUrgency();
+  updateStreakBar();
+  setupPwa();
 }
+
+// ─── EVENTS ──────────────────────────────────────────────────────────────────
 
 function bindEvents() {
   els.addTaskBtn.addEventListener('click', addTaskFromComposer);
   els.taskInput.addEventListener('keydown', submitComposerOnEnter);
-  els.subtaskInput.addEventListener('keydown', submitComposerOnEnter);
+  els.firstStepInput.addEventListener('keydown', submitComposerOnEnter);
 
-  els.searchInput.addEventListener('input', (event) => {
-    state.search = event.target.value.trim();
+  els.searchInput.addEventListener('input', (e) => {
+    state.search = e.target.value.trim();
     saveState();
     renderTasks();
   });
 
-  $$('.chip').forEach((button) => {
-    button.addEventListener('click', () => {
-      state.filter = button.dataset.filter;
-      saveState();
-      render();
-    });
+  $$('.chip').forEach((btn) => btn.addEventListener('click', () => {
+    state.filter = btn.dataset.filter;
+    saveState();
+    render();
+  }));
+
+  els.activeSubtaskForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const title = els.activeSubtaskInput.value.trim();
+    const task  = getTask(state.activeTaskId);
+    if (!task) { showToast('Primero pon una tarea en X. La app todavía no hace magia negra.'); return; }
+    addSubtaskToTask(task.id, title);
+    els.activeSubtaskInput.value = '';
   });
+
+  els.completeCurrentBtn.addEventListener('click', completeCurrentStepAndRotate);
+  els.rotateBtn.addEventListener('click', rotateOnly);
+  els.focusModeBtn.addEventListener('click', toggleFocusMode);
+  els.timerToggleBtn.addEventListener('click', toggleTimer);
+  els.timerResetBtn.addEventListener('click', resetTimer);
+  document.querySelectorAll('[data-minutes]').forEach((btn) =>
+    btn.addEventListener('click', () => applyTimerPreset(btn.dataset.minutes)));
 
   els.importBtn.addEventListener('click', openImportModal);
   els.closeImportBtn.addEventListener('click', closeImportModal);
-  els.importModal.addEventListener('click', (event) => {
-    if (event.target === els.importModal) closeImportModal();
-  });
-  els.loadSampleBtn.addEventListener('click', () => {
+  els.importModal.addEventListener('click', (e) => { if (e.target === els.importModal) closeImportModal(); });
+  els.sampleBtn.addEventListener('click', () => {
     els.importTextarea.value = sampleText;
-    showToast('Ejemplo cargado. El bloc, pero con menos vibra de Windows 98.');
+    showToast('Ejemplo cargado. Qué sofisticado, copiar y pegar.');
   });
   els.parseImportBtn.addEventListener('click', importFromTextarea);
+  els.copyBtn.addEventListener('click', copySummary);
+  els.resetBtn.addEventListener('click', resetDay);
+  els.taskBoard.addEventListener('click', handleBoardClick);
+  els.taskBoard.addEventListener('submit', handleBoardSubmit);
 
-  els.completeCurrentBtn.addEventListener('click', completeCurrentStepAndRotateTask);
-  els.nextCurrentBtn.addEventListener('click', rotateOnly);
-  els.exportBtn.addEventListener('click', copySummary);
-  els.resetDayBtn.addEventListener('click', resetDay);
-  els.toggleZenBtn.addEventListener('click', toggleZenMode);
-
-  els.timerToggleBtn.addEventListener('click', toggleTimer);
-  els.timerResetBtn.addEventListener('click', resetTimer);
-  els.applyTimerSettingsBtn.addEventListener('click', applyTimerSettings);
-  els.timerMinutesInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') applyTimerSettings();
-  });
-  els.timerEndActionInput.addEventListener('change', applyTimerSettings);
-  els.themeInput.addEventListener('change', (event) => {
-    state.settings.theme = event.target.value;
-    applyTheme();
-    saveState();
-    showToast('Tema cambiado. Ya no parece invitación a baby shower digital.');
-  });
-  document.querySelectorAll('[data-timer-preset]').forEach((button) => {
-    button.addEventListener('click', () => {
-      els.timerMinutesInput.value = button.dataset.timerPreset;
-      applyTimerSettings();
-    });
-  });
-
-  document.addEventListener('keydown', (event) => {
-    if (event.target.matches('input, textarea, select')) return;
-    if (event.key.toLowerCase() === 'n') completeCurrentStepAndRotateTask();
-    if (event.key.toLowerCase() === 'r') rotateOnly();
-    if (event.key.toLowerCase() === 'f') toggleZenMode();
-    if (event.key === 'Escape') closeImportModal();
+  document.addEventListener('keydown', (e) => {
+    if (e.target.matches('input, textarea, select')) return;
+    if (e.key.toLowerCase() === 'n') completeCurrentStepAndRotate();
+    if (e.key.toLowerCase() === 'r') rotateOnly();
+    if (e.key.toLowerCase() === 'f') toggleFocusMode();
+    if (e.key === 'Escape') closeImportModal();
   });
 }
+
+// ─── UTILS ───────────────────────────────────────────────────────────────────
+
+function todayKey() { return new Date().toISOString().slice(0, 10); }
+function uid(prefix = 'id') { return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`; }
+
+function setTodayLabel() {
+  els.todayLabel.textContent = new Intl.DateTimeFormat('es-CO', {
+    weekday: 'long', day: 'numeric', month: 'long'
+  }).format(new Date());
+}
+
+function escapeHtml(v) {
+  return String(v)
+    .replaceAll('&','&amp;').replaceAll('<','&lt;')
+    .replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+}
+
+// ─── PERSISTENCE ─────────────────────────────────────────────────────────────
 
 function loadState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('rotador_tdah_alek_v2') || localStorage.getItem('rotador_tdah_alek_v1');
+    const raw = localStorage.getItem(STORAGE_KEY)
+      || localStorage.getItem('rotador_tdah_alek_v3')
+      || localStorage.getItem('rotador_tdah_alek_v2')
+      || localStorage.getItem('rotador_tdah_alek_v1');
     if (!raw) return structuredClone(defaultState);
-    const parsed = JSON.parse(raw);
-    return { ...structuredClone(defaultState), ...parsed };
-  } catch (error) {
-    console.warn('No se pudo cargar el estado local:', error);
+    return { ...structuredClone(defaultState), ...JSON.parse(raw) };
+  } catch (err) {
+    console.warn('No se pudo cargar el estado:', err);
     return structuredClone(defaultState);
   }
 }
-
-function migrateStateShape() {
-  state.settings = { ...defaultState.settings, ...(state.settings || {}) };
-
-  state.tasks = (state.tasks || []).map((task) => ({
-    id: task.id || uid('task'),
-    title: task.title || 'Tarea sin nombre',
-    energy: task.energy || 'media',
-    done: Boolean(task.done),
-    collapsed: Boolean(task.collapsed),
-    currentSubtaskId: task.currentSubtaskId || task.activeSubtaskId || null,
-    subtasks: (task.subtasks || []).map((subtask) => ({
-      id: subtask.id || uid('sub'),
-      title: subtask.title || 'Subtarea sin nombre',
-      done: Boolean(subtask.done)
-    }))
-  }));
-}
-
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
+function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
 function loadTimer() {
-  const fallback = { durationMinutes: 25, seconds: 25 * 60, running: false, endAction: 'notify' };
   try {
-    const raw = localStorage.getItem(TIMER_KEY) || localStorage.getItem('rotador_tdah_alek_timer_v1');
-    if (!raw) return fallback;
-    const parsed = { ...fallback, ...JSON.parse(raw), running: false };
-    parsed.durationMinutes = clampMinutes(parsed.durationMinutes || Math.round(parsed.seconds / 60) || 25);
-    parsed.seconds = Math.max(0, Number(parsed.seconds) || parsed.durationMinutes * 60);
-    if (!['notify', 'rotate', 'complete'].includes(parsed.endAction)) parsed.endAction = 'notify';
-    return parsed;
-  } catch {
-    return fallback;
-  }
+    const raw = localStorage.getItem(TIMER_KEY);
+    if (!raw) return { ...defaultTimer };
+    const p = { ...defaultTimer, ...JSON.parse(raw), running: false };
+    p.durationMinutes = clampMinutes(p.durationMinutes);
+    p.seconds = Math.max(0, Number(p.seconds) || p.durationMinutes * 60);
+    return p;
+  } catch { return { ...defaultTimer }; }
 }
-
 function saveTimer() {
   localStorage.setItem(TIMER_KEY, JSON.stringify({
     durationMinutes: timerState.durationMinutes,
     seconds: timerState.seconds,
-    running: false,
-    endAction: timerState.endAction
+    running: false
   }));
 }
 
-function clampMinutes(value) {
-  const minutes = Number.parseInt(value, 10);
-  if (Number.isNaN(minutes)) return 25;
-  return Math.min(180, Math.max(1, minutes));
+// ─── DOPAMINE ENGINE ─────────────────────────────────────────────────────────
+
+function loadDopamine() {
+  try {
+    const base = { date: todayKey(), streak: 0, combo: 0, lastTime: 0, xp: 0 };
+    const raw  = localStorage.getItem(DOPAMINE_KEY);
+    if (!raw) return base;
+    const p = { ...base, ...JSON.parse(raw) };
+    return p.date === todayKey() ? p : base;
+  } catch { return { date: todayKey(), streak: 0, combo: 0, lastTime: 0, xp: 0 }; }
+}
+function saveDopamine() { localStorage.setItem(DOPAMINE_KEY, JSON.stringify(dopamineState)); }
+
+function onStepCompleted(triggerEl) {
+  const now = Date.now();
+  dopamineState.streak++;
+  dopamineState.xp    += 10;
+  dopamineState.combo  = (now - dopamineState.lastTime < COMBO_WINDOW_MS)
+    ? dopamineState.combo + 1 : 1;
+  dopamineState.lastTime = now;
+  saveDopamine();
+
+  const rect = triggerEl.getBoundingClientRect();
+  spawnConfetti(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  spawnFloatingText('+10 XP', triggerEl);
+  updateStreakBar();
+
+  if (dopamineState.combo >= 3) showComboFlash(dopamineState.combo);
 }
 
-function applyTheme() {
-  const theme = state.settings?.theme || 'tech';
-  document.body.dataset.theme = theme;
+function updateStreakBar() {
+  const bar = els.streakBar;
+  if (!bar) return;
+  const { streak, combo, xp } = dopamineState;
+  bar.hidden = streak < 1;
+  if (streak < 1) return;
+
+  bar.querySelector('.streak-count').textContent = streak;
+  bar.querySelector('.xp-count').textContent     = `${xp} XP`;
+  const comboEl = bar.querySelector('.combo-count');
+  if (combo >= 3) { comboEl.textContent = `⚡ ×${combo}`; comboEl.hidden = false; }
+  else              { comboEl.hidden = true; }
+
+  bar.classList.remove('pop');
+  void bar.offsetWidth;          // reflow para reiniciar animación
+  bar.classList.add('pop');
 }
 
-function syncSettingsInputs() {
-  els.timerMinutesInput.value = timerState.durationMinutes;
-  els.timerEndActionInput.value = timerState.endAction;
-  els.themeInput.value = state.settings?.theme || 'tech';
+function showComboFlash(count) {
+  document.body.classList.add('combo-flash');
+  setTimeout(() => document.body.classList.remove('combo-flash'), 600);
+  showToast(`⚡ COMBO ×${count} — ¡Imparable!`);
 }
 
-function applyTimerSettings() {
-  const nextMinutes = clampMinutes(els.timerMinutesInput.value);
-  const nextEndAction = els.timerEndActionInput.value;
-  const wasRunning = timerState.running;
-
-  timerState.durationMinutes = nextMinutes;
-  timerState.endAction = ['notify', 'rotate', 'complete'].includes(nextEndAction) ? nextEndAction : 'notify';
-  timerState.seconds = nextMinutes * 60;
-  timerState.running = false;
-  stopTimer();
-  els.timerToggleBtn.textContent = 'Iniciar';
-  syncSettingsInputs();
-  updateTimerDisplay();
-  saveTimer();
-
-  showToast(wasRunning ? 'Ajuste aplicado y temporizador reiniciado.' : `Sprint ajustado a ${nextMinutes} minutos.`);
-}
-
-
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function uid(prefix = 'id') {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function setTodayLabel() {
-  const formatter = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', month: 'long' });
-  els.todayLabel.textContent = formatter.format(new Date());
-}
-
-function normalizeMarkerText(text) {
-  let cleaned = text.trim();
-  const hasStar = /\*\s*$/.test(cleaned);
-  const hasX = /(?:\s|^)x\s*$/i.test(cleaned);
-  cleaned = cleaned.replace(/\*\s*$/, '').replace(/(?:\s|^)x\s*$/i, '').trim();
-  return { text: cleaned, hasStar, hasX };
-}
-
-function parseBlocText(rawText) {
-  const lines = rawText.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  const tasks = [];
-  let currentTask = null;
-  let parsedActiveTaskId = null;
-  let firstStarredTaskId = null;
-
-  for (const line of lines) {
-    const isTitle = /^seguimiento\s+de\s+tareas/i.test(line);
-    if (isTitle) continue;
-
-    const numberedMatch = line.match(/^\d+[.)]\s*(.+)$/);
-    const bulletMatch = line.match(/^[-•*]\s*(.+)$/);
-
-    if (numberedMatch) {
-      const { text, hasStar, hasX } = normalizeMarkerText(numberedMatch[1]);
-      if (!text) continue;
-      currentTask = createTask(text, 'media');
-      tasks.push(currentTask);
-      if (hasX) parsedActiveTaskId = currentTask.id;
-      if (hasStar && !firstStarredTaskId) firstStarredTaskId = currentTask.id;
-      continue;
-    }
-
-    if (bulletMatch) {
-      const { text, hasStar, hasX } = normalizeMarkerText(bulletMatch[1]);
-      if (!text) continue;
-
-      if (!currentTask) {
-        currentTask = createTask(text, 'media');
-        tasks.push(currentTask);
-      } else {
-        const subtask = createSubtask(text);
-        currentTask.subtasks.push(subtask);
-        if (hasStar) {
-          currentTask.currentSubtaskId = subtask.id;
-          if (!firstStarredTaskId) firstStarredTaskId = currentTask.id;
-        }
-        if (hasX) parsedActiveTaskId = currentTask.id;
-        continue;
-      }
-
-      if (hasX) parsedActiveTaskId = currentTask.id;
-      if (hasStar && !firstStarredTaskId) firstStarredTaskId = currentTask.id;
-      continue;
-    }
-
-    const { text, hasStar, hasX } = normalizeMarkerText(line);
-    if (!text) continue;
-    currentTask = createTask(text, 'media');
-    tasks.push(currentTask);
-    if (hasX) parsedActiveTaskId = currentTask.id;
-    if (hasStar && !firstStarredTaskId) firstStarredTaskId = currentTask.id;
+function checkProgressMilestone(prev, next) {
+  for (const m of [25, 50, 75, 100]) {
+    if (prev < m && next >= m) { fireMilestone(m); return; }
   }
-
-  tasks.forEach(ensureTaskSubtaskPointer);
-
-  return {
-    tasks,
-    activeTaskId: parsedActiveTaskId || firstStarredTaskId || tasks.find(task => !task.done)?.id || null
-  };
 }
 
-function createTask(title, energy = 'media') {
-  return {
-    id: uid('task'),
-    title,
-    energy,
-    done: false,
-    collapsed: false,
-    currentSubtaskId: null,
-    subtasks: []
+function fireMilestone(pct) {
+  const msgs = {
+    25:  '🚂 ¡25%! El tren salió de la estación.',
+    50:  '⛰️ ¡Mitad del día! La cuesta va para abajo.',
+    75:  '🎯 ¡75%! Casi en la meta, no te distraigas.',
+    100: '🏆 ¡TODO LISTO! Día ganado.',
   };
+  showToast(msgs[pct] || `¡${pct}% completado!`);
+  els.progressBar.classList.add('milestone-pulse');
+  setTimeout(() => els.progressBar.classList.remove('milestone-pulse'), 900);
+  if (pct === 100) setTimeout(() => spawnConfetti(window.innerWidth / 2, window.innerHeight / 3), 350);
 }
 
-function createSubtask(title) {
-  return {
-    id: uid('sub'),
-    title,
-    done: false
-  };
+// ─── CONFETTI ────────────────────────────────────────────────────────────────
+
+function spawnConfetti(cx, cy) {
+  const canvas = document.getElementById('particles');
+  if (!canvas) return;
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const ctx = canvas.getContext('2d');
+
+  const pts = Array.from({ length: 36 }, () => ({
+    x: cx, y: cy,
+    vx: (Math.random() - 0.5) * 18,
+    vy: -(Math.random() * 14 + 4),
+    sz: Math.random() * 9 + 4,
+    color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+    rot: Math.random() * 360,
+    rotV: (Math.random() - 0.5) * 16,
+    g: 0.45,
+    a: 1,
+    rect: Math.random() > 0.35,
+  }));
+
+  if (particleFrame) cancelAnimationFrame(particleFrame);
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let alive = false;
+    for (const p of pts) {
+      p.x += p.vx; p.y += p.vy; p.vy += p.g;
+      p.vx *= 0.985; p.rot += p.rotV; p.a -= 0.02;
+      if (p.a <= 0) continue;
+      alive = true;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.a);
+      ctx.fillStyle   = p.color;
+      ctx.translate(p.x, p.y);
+      ctx.rotate((p.rot * Math.PI) / 180);
+      if (p.rect) ctx.fillRect(-p.sz / 2, -p.sz / 4, p.sz, p.sz / 2.5);
+      else { ctx.beginPath(); ctx.arc(0, 0, p.sz / 2, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+    }
+    if (alive) particleFrame = requestAnimationFrame(draw);
+    else ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  draw();
 }
+
+// ─── FLOATING TEXT ───────────────────────────────────────────────────────────
+
+function spawnFloatingText(text, originEl) {
+  const rect = originEl.getBoundingClientRect();
+  const el   = document.createElement('div');
+  el.className = 'floating-xp';
+  el.textContent = text;
+  el.style.left  = `${rect.left + rect.width / 2}px`;
+  el.style.top   = `${rect.top - 4}px`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 950);
+}
+
+// ─── MIGRATION ───────────────────────────────────────────────────────────────
+
+function migrateStateShape() {
+  state.tasks = (state.tasks || []).map((t) => ({
+    id:               t.id || uid('task'),
+    title:            t.title || 'Tarea sin nombre',
+    priority:         normalizePriority(t.priority || t.energy || 'urgent'),
+    done:             Boolean(t.done),
+    currentSubtaskId: t.currentSubtaskId || t.activeSubtaskId || null,
+    subtasks: (t.subtasks || []).map((s) => ({
+      id:    s.id    || uid('sub'),
+      title: s.title || 'Subtarea sin nombre',
+      done:  Boolean(s.done),
+    })),
+  }));
+  if (!['all','pending','urgent','active','done'].includes(state.filter)) state.filter = 'all';
+}
+
+function normalizePriority(v) {
+  if (v === 'alta'  || v === 'high')   return 'high';
+  if (v === 'normal'|| v === 'baja')   return 'normal';
+  return 'urgent';
+}
+function clampMinutes(v) {
+  const m = Number.parseInt(v, 10);
+  return Number.isNaN(m) ? 15 : Math.max(1, Math.min(180, m));
+}
+
+// ─── FACTORY ─────────────────────────────────────────────────────────────────
+
+function createTask(title, priority = 'urgent') {
+  return { id: uid('task'), title, priority: normalizePriority(priority), done: false, currentSubtaskId: null, subtasks: [] };
+}
+function createSubtask(title) { return { id: uid('sub'), title, done: false }; }
+function getTask(id) { return state.tasks.find((t) => t.id === id) || null; }
+
+// ─── POINTERS ────────────────────────────────────────────────────────────────
 
 function ensureTaskSubtaskPointer(task) {
-  if (!task.subtasks.length) {
-    task.currentSubtaskId = null;
-    return;
-  }
-
-  const pointed = task.subtasks.find(sub => sub.id === task.currentSubtaskId && !sub.done);
-  if (pointed) return;
-
-  const nextPending = task.subtasks.find(sub => !sub.done);
-  task.currentSubtaskId = nextPending?.id ?? null;
-  task.done = !nextPending;
+  if (!task) return;
+  if (!task.subtasks.length) { task.currentSubtaskId = null; return; }
+  const active = task.subtasks.find((s) => s.id === task.currentSubtaskId && !s.done);
+  if (active) { task.done = false; return; }
+  const next = task.subtasks.find((s) => !s.done);
+  task.currentSubtaskId = next?.id || null;
+  task.done = !next;
 }
 
 function ensureActivePointer() {
   state.tasks.forEach(ensureTaskSubtaskPointer);
-
-  const activeTask = getTask(state.activeTaskId);
-  if (activeTask && !activeTask.done) return;
-
-  const next = findNextPendingTask();
-  state.activeTaskId = next?.id ?? null;
-}
-
-function getTask(taskId) {
-  return state.tasks.find(task => task.id === taskId) ?? null;
+  const active = getTask(state.activeTaskId);
+  if (active && !active.done) return;
+  state.activeTaskId = findNextPendingTask()?.id || null;
 }
 
 function getCurrentSubtask(task) {
-  if (!task?.subtasks?.length) return null;
+  if (!task || !task.subtasks.length) return null;
   ensureTaskSubtaskPointer(task);
-  return task.subtasks.find(sub => sub.id === task.currentSubtaskId) ?? null;
+  return task.subtasks.find((s) => s.id === task.currentSubtaskId) || null;
 }
 
-function findNextPendingTask(startAfterTaskId = null) {
-  const pendingTasks = state.tasks.filter(task => !task.done);
-  if (!pendingTasks.length) return null;
-  if (!startAfterTaskId) return pendingTasks[0];
-
-  const currentIndex = state.tasks.findIndex(task => task.id === startAfterTaskId);
-  const after = state.tasks.find((task, index) => index > currentIndex && !task.done);
-  return after || pendingTasks[0];
+function findNextPendingTask(startAfterId = null) {
+  const pending = state.tasks.filter((t) => !t.done);
+  if (!pending.length) return null;
+  if (!startAfterId) return pending[0];
+  const idx = state.tasks.findIndex((t) => t.id === startAfterId);
+  return state.tasks.find((t, i) => i > idx && !t.done) || pending[0];
 }
+
+// ─── ACTIONS ─────────────────────────────────────────────────────────────────
 
 function addTaskFromComposer() {
-  const title = els.taskInput.value.trim();
-  const subtaskTitle = els.subtaskInput.value.trim();
-  const energy = els.energyInput.value;
-
-  if (!title && !subtaskTitle) {
-    showToast('Pon algo, Alek. La app no adivina todavía, por fortuna.');
+  const title     = els.taskInput.value.trim();
+  const firstStep = els.firstStepInput.value.trim();
+  const priority  = els.priorityInput.value;
+  if (!title) {
+    showToast('Escribe el nombre de la tarea. El caos sin título no ayuda.');
+    els.taskInput.focus();
     return;
   }
-
-  if (title) {
-    const task = createTask(title, energy);
-    if (subtaskTitle) {
-      const subtask = createSubtask(subtaskTitle);
-      task.subtasks.push(subtask);
-      task.currentSubtaskId = subtask.id;
-    }
-    state.tasks.push(task);
-  } else {
-    const activeTask = getTask(state.activeTaskId) ?? state.tasks[state.tasks.length - 1];
-    if (!activeTask) {
-      showToast('Necesitas una tarea base antes de meterle subtareas.');
-      return;
-    }
-    const subtask = createSubtask(subtaskTitle);
-    activeTask.subtasks.push(subtask);
-    activeTask.done = false;
-    if (!activeTask.currentSubtaskId) activeTask.currentSubtaskId = subtask.id;
+  const task = createTask(title, priority);
+  if (firstStep) {
+    const sub = createSubtask(firstStep);
+    task.subtasks.push(sub);
+    task.currentSubtaskId = sub.id;
   }
-
+  state.tasks.push(task);
+  if (!state.activeTaskId) state.activeTaskId = task.id;
   ensureActivePointer();
   saveState();
-  els.taskInput.value = '';
-  els.subtaskInput.value = '';
+  els.taskInput.value = els.firstStepInput.value = '';
+  els.taskInput.focus();
   render();
-  showToast('Agregado. Otro ladrillito contra el caos 🧱');
+  showToast('Tarea agregada. Un ladrillo menos en la torre del desorden.');
 }
 
-function submitComposerOnEnter(event) {
-  if (event.key === 'Enter') addTaskFromComposer();
-}
+function submitComposerOnEnter(e) { if (e.key === 'Enter') addTaskFromComposer(); }
 
-function openImportModal() {
-  els.importTextarea.value = '';
-  els.importModal.classList.remove('hidden');
-  setTimeout(() => els.importTextarea.focus(), 0);
-}
-
-function closeImportModal() {
-  els.importModal.classList.add('hidden');
-}
-
-function importFromTextarea() {
-  const raw = els.importTextarea.value.trim();
-  if (!raw) {
-    showToast('Pega la lista primero. El vacío no se organiza, se contempla.');
+function addSubtaskToTask(taskId, title) {
+  const clean = title.trim();
+  const task  = getTask(taskId);
+  if (!task) return;
+  if (!clean) {
+    showToast('La subtarea necesita texto. Una subtarea invisible sería muy poética, pero inútil.');
     return;
   }
-
-  const parsed = parseBlocText(raw);
-  if (!parsed.tasks.length) {
-    showToast('No encontré tareas reconocibles. El bloc ganó esta ronda.');
-    return;
+  const sub = createSubtask(clean);
+  task.subtasks.push(sub);
+  task.done = false;
+  if (!task.currentSubtaskId || !task.subtasks.find((s) => s.id === task.currentSubtaskId && !s.done)) {
+    task.currentSubtaskId = sub.id;
   }
-
-  state.tasks = parsed.tasks;
-  state.activeTaskId = parsed.activeTaskId;
-  state.date = todayKey();
+  if (!state.activeTaskId) state.activeTaskId = task.id;
   ensureActivePointer();
   saveState();
-  closeImportModal();
   render();
-  showToast('Jornada importada y domesticada.');
+  showToast('Subtarea agregada donde sí era. Milagro de UX.');
 }
 
-function completeCurrentStepAndRotateTask() {
+function completeCurrentStepAndRotate() {
+  const prevProgress = getTotalSteps()
+    ? Math.round((getDoneSteps() / getTotalSteps()) * 100) : 0;
+
   ensureActivePointer();
   const task = getTask(state.activeTaskId);
-  if (!task) {
-    showToast('No hay tarea activa. Sospechosamente tranquilo.');
-    render();
-    return;
-  }
+  if (!task) { showToast('No hay tarea activa. Tranquilidad sospechosa.'); render(); return; }
 
-  const subtask = getCurrentSubtask(task);
+  const sub        = getCurrentSubtask(task);
+  const wasLastSub = sub && task.subtasks.filter((s) => !s.done).length === 1;
 
-  if (subtask) {
-    subtask.done = true;
-    const nextSubtask = task.subtasks.find(sub => !sub.done);
-    task.currentSubtaskId = nextSubtask?.id ?? null;
-    task.done = !nextSubtask;
-  } else {
-    task.done = true;
-  }
+  if (sub) { sub.done = true; ensureTaskSubtaskPointer(task); }
+  else      { task.done = true; }
 
-  const nextTask = findNextPendingTask(task.id);
-  state.activeTaskId = nextTask?.id ?? null;
+  const nextTask     = findNextPendingTask(task.id);
+  state.activeTaskId = nextTask?.id || null;
   ensureActivePointer();
   saveState();
   render();
 
-  if (!nextTask) {
-    showToast('Todo listo. Raro, sospechoso, pero hermoso ✨');
-  } else {
-    showToast('Paso listo. X rotó a la siguiente tarea.');
-  }
+  // 🎯 Dopamina
+  onStepCompleted(els.completeCurrentBtn);
+  const nextProgress = getTotalSteps()
+    ? Math.round((getDoneSteps() / getTotalSteps()) * 100) : 0;
+  checkProgressMilestone(prevProgress, nextProgress);
+
+  if (!state.activeTaskId)     showToast('🏆 Todo listo. Día ganado. Sospechoso, pero precioso.');
+  else if (wasLastSub)         showToast('✓ ¡Tarea completada! Rotando a la siguiente.');
+  else                         showToast('Paso completado. X rotó a lo siguiente.');
 }
 
 function rotateOnly() {
   ensureActivePointer();
-  const nextTask = findNextPendingTask(state.activeTaskId);
-
-  if (!nextTask) {
-    showToast('No hay nada pendiente para rotar. Respira, esa función ancestral.');
-    return;
-  }
-
-  state.activeTaskId = nextTask.id;
-  ensureActivePointer();
+  const next = findNextPendingTask(state.activeTaskId);
+  if (!next) { showToast('No hay pendientes para rotar. Inusual, casi mítico.'); render(); return; }
+  state.activeTaskId = next.id;
+  ensureTaskSubtaskPointer(next);
   saveState();
   render();
-  showToast('X rotada sin completar. El sistema acepta tus excusas.');
+  showToast('X rotó sin completar. Permitiremos esta pequeña evasión.');
 }
 
 function setActiveTask(taskId) {
@@ -538,28 +490,27 @@ function setActiveTask(taskId) {
   ensureTaskSubtaskPointer(task);
   saveState();
   render();
-  showToast('X movida. El destino ha sido actualizado.');
 }
 
 function setActiveSubtask(taskId, subtaskId) {
   const task = getTask(taskId);
-  const subtask = task?.subtasks.find(item => item.id === subtaskId);
-  if (!task || !subtask || subtask.done) return;
+  const sub  = task?.subtasks.find((s) => s.id === subtaskId);
+  if (!task || !sub || sub.done) return;
   task.currentSubtaskId = subtaskId;
   task.done = false;
-  if (task.id === state.activeTaskId) ensureActivePointer();
+  state.activeTaskId = taskId;
   saveState();
   render();
-  showToast('* movido dentro de esta tarea.');
+  showToast('X y * actualizados. Orden mínimo restaurado.');
 }
 
 function toggleTaskDone(taskId) {
   const task = getTask(taskId);
   if (!task) return;
-  const nextDone = !task.done;
-  task.done = nextDone;
-  task.subtasks.forEach(sub => sub.done = nextDone);
-  task.currentSubtaskId = nextDone ? null : task.subtasks[0]?.id ?? null;
+  const next = !task.done;
+  task.done = next;
+  task.subtasks.forEach((s) => { s.done = next; });
+  task.currentSubtaskId = next ? null : task.subtasks.find((s) => !s.done)?.id || null;
   ensureActivePointer();
   saveState();
   render();
@@ -567,29 +518,10 @@ function toggleTaskDone(taskId) {
 
 function toggleSubtaskDone(taskId, subtaskId) {
   const task = getTask(taskId);
-  const subtask = task?.subtasks.find(sub => sub.id === subtaskId);
-  if (!task || !subtask) return;
-
-  subtask.done = !subtask.done;
-  task.done = task.subtasks.every(sub => sub.done);
-  ensureTaskSubtaskPointer(task);
-  ensureActivePointer();
-  saveState();
-  render();
-}
-
-function deleteTask(taskId) {
-  state.tasks = state.tasks.filter(task => task.id !== taskId);
-  ensureActivePointer();
-  saveState();
-  render();
-  showToast('Tarea eliminada. Que descanse en el basurero digital.');
-}
-
-function deleteSubtask(taskId, subtaskId) {
-  const task = getTask(taskId);
-  if (!task) return;
-  task.subtasks = task.subtasks.filter(sub => sub.id !== subtaskId);
+  const sub  = task?.subtasks.find((s) => s.id === subtaskId);
+  if (!task || !sub) return;
+  sub.done = !sub.done;
+  if (!sub.done) { task.done = false; if (!task.currentSubtaskId) task.currentSubtaskId = sub.id; }
   ensureTaskSubtaskPointer(task);
   ensureActivePointer();
   saveState();
@@ -599,32 +531,237 @@ function deleteSubtask(taskId, subtaskId) {
 function editTask(taskId) {
   const task = getTask(taskId);
   if (!task) return;
-  const title = prompt('Editar tarea:', task.title);
-  if (title === null) return;
-  const cleanTitle = title.trim();
-  if (!cleanTitle) return;
-  task.title = cleanTitle;
+  const next = prompt('Editar tarea:', task.title);
+  if (next === null) return;
+  const clean = next.trim();
+  if (!clean) return;
+  task.title = clean;
   saveState();
   render();
 }
 
 function editSubtask(taskId, subtaskId) {
   const task = getTask(taskId);
-  const subtask = task?.subtasks.find(sub => sub.id === subtaskId);
-  if (!subtask) return;
-  const title = prompt('Editar subtarea:', subtask.title);
-  if (title === null) return;
-  const cleanTitle = title.trim();
-  if (!cleanTitle) return;
-  subtask.title = cleanTitle;
+  const sub  = task?.subtasks.find((s) => s.id === subtaskId);
+  if (!sub) return;
+  const next = prompt('Editar subtarea:', sub.title);
+  if (next === null) return;
+  const clean = next.trim();
+  if (!clean) return;
+  sub.title = clean;
   saveState();
   render();
 }
 
+function deleteTask(taskId) {
+  const task = getTask(taskId);
+  if (!task || !confirm(`¿Borrar la tarea "${task.title}"?`)) return;
+  state.tasks = state.tasks.filter((t) => t.id !== taskId);
+  ensureActivePointer();
+  saveState();
+  render();
+  showToast('Tarea borrada. Que el basurero digital la reciba.');
+}
+
+function deleteSubtask(taskId, subtaskId) {
+  const task = getTask(taskId);
+  if (!task) return;
+  task.subtasks = task.subtasks.filter((s) => s.id !== subtaskId);
+  ensureTaskSubtaskPointer(task);
+  ensureActivePointer();
+  saveState();
+  render();
+}
+
+function changeTaskPriority(taskId) {
+  const task = getTask(taskId);
+  if (!task) return;
+  const order = ['urgent','high','normal'];
+  task.priority = order[(order.indexOf(task.priority) + 1) % order.length];
+  saveState();
+  render();
+}
+
+function moveTask(taskId, dir) {
+  const idx = state.tasks.findIndex((t) => t.id === taskId);
+  if (idx === -1) return;
+  const next = idx + dir;
+  if (next < 0 || next >= state.tasks.length) return;
+  const [task] = state.tasks.splice(idx, 1);
+  state.tasks.splice(next, 0, task);
+  saveState();
+  render();
+}
+
+// ─── BOARD HANDLERS ──────────────────────────────────────────────────────────
+
+function handleBoardClick(e) {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  const taskId = btn.closest('[data-task-id]')?.dataset.taskId;
+  const subId  = btn.closest('[data-subtask-id]')?.dataset.subtaskId;
+  const map = {
+    'active-task':    () => setActiveTask(taskId),
+    'toggle-task':    () => toggleTaskDone(taskId),
+    'edit-task':      () => editTask(taskId),
+    'delete-task':    () => deleteTask(taskId),
+    'priority-task':  () => changeTaskPriority(taskId),
+    'move-up':        () => moveTask(taskId, -1),
+    'move-down':      () => moveTask(taskId, 1),
+    'active-subtask': () => setActiveSubtask(taskId, subId),
+    'toggle-subtask': () => toggleSubtaskDone(taskId, subId),
+    'edit-subtask':   () => editSubtask(taskId, subId),
+    'delete-subtask': () => deleteSubtask(taskId, subId),
+  };
+  map[btn.dataset.action]?.();
+}
+
+function handleBoardSubmit(e) {
+  const form = e.target.closest('[data-subtask-form]');
+  if (!form) return;
+  e.preventDefault();
+  const input = form.querySelector('input[name="subtask"]');
+  addSubtaskToTask(form.closest('[data-task-id]')?.dataset.taskId, input.value);
+  input.value = '';
+  input.focus();
+}
+
+// ─── IMPORT / EXPORT ─────────────────────────────────────────────────────────
+
+function parseMarkerText(raw) {
+  let text    = raw.trim();
+  const hasStar = /\*\s*$/.test(text);
+  const hasX    = /(?:^|\s)x\s*$/i.test(text);
+  text = text.replace(/^!+\s*/,'').replace(/\[\s*urgente\s*\]/ig,'')
+             .replace(/\*\s*$/,'').replace(/(?:^|\s)x\s*$/i,'').trim();
+  return { text, hasStar, hasX, priority: 'urgent' };
+}
+
+function parseList(raw) {
+  const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const tasks = [];
+  let curr = null, activeTaskId = null, firstStarId = null;
+
+  for (const line of lines) {
+    const num = line.match(/^\d+[.)]\s*(.+)$/);
+    const bul = line.match(/^[-•*]\s*(.+)$/);
+    if (num) {
+      const m = parseMarkerText(num[1]);
+      if (!m.text) continue;
+      curr = createTask(m.text, m.priority);
+      tasks.push(curr);
+      if (m.hasX) activeTaskId = curr.id;
+      if (m.hasStar && !firstStarId) firstStarId = curr.id;
+      continue;
+    }
+    if (bul) {
+      const m = parseMarkerText(bul[1]);
+      if (!m.text) continue;
+      if (!curr) { curr = createTask(m.text, m.priority); tasks.push(curr); }
+      else {
+        const sub = createSubtask(m.text);
+        curr.subtasks.push(sub);
+        if (m.hasStar) { curr.currentSubtaskId = sub.id; if (!firstStarId) firstStarId = curr.id; }
+        if (m.hasX) activeTaskId = curr.id;
+      }
+      continue;
+    }
+    const m = parseMarkerText(line);
+    if (!m.text) continue;
+    curr = createTask(m.text, m.priority);
+    tasks.push(curr);
+    if (m.hasX) activeTaskId = curr.id;
+    if (m.hasStar && !firstStarId) firstStarId = curr.id;
+  }
+  tasks.forEach(ensureTaskSubtaskPointer);
+  return { tasks, activeTaskId: activeTaskId || firstStarId || tasks.find((t) => !t.done)?.id || null };
+}
+
+function openImportModal() {
+  els.importTextarea.value = '';
+  els.importModal.classList.remove('hidden');
+  setTimeout(() => els.importTextarea.focus(), 0);
+}
+function closeImportModal() { els.importModal.classList.add('hidden'); }
+
+function importFromTextarea() {
+  const raw = els.importTextarea.value.trim();
+  if (!raw) { showToast('Pega una lista primero. El vacío no rota, solo decepciona.'); return; }
+  const parsed = parseList(raw);
+  if (!parsed.tasks.length) { showToast('No encontré tareas válidas. El bloc ganó esta ronda.'); return; }
+  state.tasks        = parsed.tasks;
+  state.activeTaskId = parsed.activeTaskId;
+  state.filter       = 'all';
+  state.search       = '';
+  state.date         = todayKey();
+  els.searchInput.value = '';
+  ensureActivePointer();
+  saveState();
+  closeImportModal();
+  render();
+  showToast('Lista importada. Ya se puede pelear contra el día con dignidad.');
+}
+
+function resetDay() {
+  if (!confirm('¿Crear una jornada nueva? Esto borra las tareas actuales de este navegador.')) return;
+  state         = structuredClone(defaultState);
+  dopamineState = { date: todayKey(), streak: 0, combo: 0, lastTime: 0, xp: 0 };
+  saveDopamine();
+  stopTimer();
+  timerState = { ...defaultTimer };
+  saveState();
+  saveTimer();
+  render();
+  updateTimerDisplay();
+  updateTimerUrgency();
+  updateStreakBar();
+  showToast('Jornada nueva. Pantalla limpia, mente todavía en garantía dudosa.');
+}
+
+function copySummary() {
+  const date  = new Date().toLocaleDateString('es-CO', { weekday:'long', day:'numeric', month:'long' });
+  const lines = [`Seguimiento urgente · ${date}`];
+  state.tasks.forEach((t, i) => {
+    lines.push(`${i+1}. ${t.title}${t.id === state.activeTaskId ? ' x':''}${t.done ? ' ✓':''}`);
+    t.subtasks.forEach((s) =>
+      lines.push(`- ${s.title}${s.id === t.currentSubtaskId && !s.done ? ' *':''}${s.done ? ' ✓':''}`));
+  });
+  navigator.clipboard.writeText(lines.join('\n'))
+    .then(() => showToast('Resumen copiado. El bloc de notas puede respirar.'))
+    .catch(() => showToast('No pude copiar. El navegador decidió ser personaje.'));
+}
+
+// ─── FILTERS / STATS ─────────────────────────────────────────────────────────
+
+function taskMatchesFilter(t) {
+  if (state.filter === 'pending') return !t.done;
+  if (state.filter === 'done')    return  t.done;
+  if (state.filter === 'urgent')  return  t.priority === 'urgent' && !t.done;
+  if (state.filter === 'active')  return  t.id === state.activeTaskId;
+  return true;
+}
+function taskMatchesSearch(t) {
+  const q = state.search.toLowerCase();
+  if (!q) return true;
+  return [t.title, priorityLabel(t.priority), ...t.subtasks.map((s) => s.title)]
+    .join(' ').toLowerCase().includes(q);
+}
+
+function getTotalSteps() { return state.tasks.reduce((n,t) => n + Math.max(t.subtasks.length,1), 0); }
+function getDoneSteps()  {
+  return state.tasks.reduce((n,t) => {
+    if (t.subtasks.length) return n + t.subtasks.filter((s) => s.done).length;
+    return n + (t.done ? 1 : 0);
+  }, 0);
+}
+function getPendingSteps() { return Math.max(0, getTotalSteps() - getDoneSteps()); }
+
+// ─── RENDER ──────────────────────────────────────────────────────────────────
+
 function render() {
   ensureActivePointer();
   els.searchInput.value = state.search;
-  $$('.chip').forEach(chip => chip.classList.toggle('active', chip.dataset.filter === state.filter));
+  $$('.chip').forEach((btn) => btn.classList.toggle('active', btn.dataset.filter === state.filter));
   renderFocus();
   renderStats();
   renderTasks();
@@ -632,240 +769,150 @@ function render() {
 
 function renderFocus() {
   const task = getTask(state.activeTaskId);
-  const subtask = getCurrentSubtask(task);
-
+  const sub  = getCurrentSubtask(task);
   if (!task) {
-    els.currentTaskTitle.textContent = 'Jornada despejada';
-    els.currentSubtaskTitle.textContent = 'No hay pendientes. Este silencio es legalmente sospechoso.';
-    els.currentStatus.textContent = 'Sin X';
-    els.completeCurrentBtn.disabled = true;
-    els.nextCurrentBtn.disabled = true;
+    els.activeBadge.textContent = 'Sin X';
+    els.activeBadge.classList.remove('active');
+    els.currentTaskTitle.textContent = 'No hay tarea activa';
+    els.currentStepTitle.textContent = 'Agrega una tarea urgente para empezar.';
+    els.completeCurrentBtn.disabled = els.rotateBtn.disabled = els.activeSubtaskInput.disabled = true;
     return;
   }
-
+  els.activeBadge.textContent = sub ? 'X + *' : 'X actual';
+  els.activeBadge.classList.add('active');
   els.currentTaskTitle.textContent = task.title;
-  els.currentSubtaskTitle.textContent = subtask ? `* ${subtask.title}` : 'Sin subtareas: completa esta tarea cuando cierres el bloque.';
-  els.currentStatus.textContent = subtask ? 'X + * actual' : 'X actual';
-  els.completeCurrentBtn.disabled = false;
-  els.nextCurrentBtn.disabled = false;
+  els.currentStepTitle.innerHTML   = sub
+    ? `<strong>*</strong> ${escapeHtml(sub.title)}`
+    : 'Sin subtareas: puedes completar esta tarea como bloque o agregarle pasos.';
+  els.completeCurrentBtn.disabled = els.rotateBtn.disabled = els.activeSubtaskInput.disabled = false;
 }
 
 function renderStats() {
-  const totalTasks = state.tasks.length;
-  const doneTasks = state.tasks.filter(task => task.done).length;
-  const pendingTasks = totalTasks - doneTasks;
-  const totalSteps = getTotalSteps();
-  const doneSteps = getDoneSteps();
-  const progress = totalSteps ? Math.round((doneSteps / totalSteps) * 100) : 0;
-
-  els.statTasks.textContent = totalTasks;
-  els.statDone.textContent = doneTasks;
-  els.statPending.textContent = pendingTasks;
-  els.globalProgressBar.style.width = `${progress}%`;
-  els.globalProgressText.textContent = `${progress}% de la jornada · ${doneSteps}/${totalSteps} pasos`;
-}
-
-function getTotalSteps() {
-  return state.tasks.reduce((total, task) => total + Math.max(task.subtasks.length, 1), 0);
-}
-
-function getDoneSteps() {
-  return state.tasks.reduce((total, task) => {
-    if (task.subtasks.length) return total + task.subtasks.filter(sub => sub.done).length;
-    return total + (task.done ? 1 : 0);
-  }, 0);
-}
-
-function taskMatchesFilter(task) {
-  const isActive = task.id === state.activeTaskId;
-  if (state.filter === 'active') return isActive;
-  if (state.filter === 'done') return task.done;
-  if (state.filter === 'pending') return !task.done;
-  return true;
-}
-
-function taskMatchesSearch(task) {
-  const query = state.search.toLowerCase();
-  if (!query) return true;
-  const text = [task.title, ...task.subtasks.map(sub => sub.title)].join(' ').toLowerCase();
-  return text.includes(query);
+  const done = getDoneSteps(), total = getTotalSteps();
+  const progress = total ? Math.round((done / total) * 100) : 0;
+  els.statTasks.textContent        = state.tasks.length;
+  els.statPendingSteps.textContent = getPendingSteps();
+  els.statDoneSteps.textContent    = done;
+  els.progressText.textContent     = `${progress}%`;
+  els.progressBar.style.width      = `${progress}%`;
 }
 
 function renderTasks() {
-  const visibleTasks = state.tasks.filter(task => taskMatchesFilter(task) && taskMatchesSearch(task));
-
-  if (!visibleTasks.length) {
-    els.taskBoard.innerHTML = `
-      <article class="empty-state">
-        <h2>No hay tareas para mostrar</h2>
-        <p>Cambia el filtro, importa tu bloc o disfruta tres segundos de falsa paz.</p>
-      </article>
-    `;
-    return;
-  }
-
-  els.taskBoard.innerHTML = visibleTasks.map(taskTemplate).join('');
-  bindTaskBoardEvents();
+  const visible = state.tasks.filter((t) => taskMatchesFilter(t) && taskMatchesSearch(t));
+  els.taskBoard.innerHTML = visible.length
+    ? visible.map(taskTemplate).join('')
+    : `<article class="empty-state">
+         <h2>No hay tareas para mostrar</h2>
+         <p>Agrega una tarea urgente, cambia el filtro o importa una lista. La nada también cansa.</p>
+       </article>`;
 }
 
 function taskTemplate(task) {
-  const isActive = task.id === state.activeTaskId;
-  const doneCount = task.subtasks.length ? task.subtasks.filter(sub => sub.done).length : (task.done ? 1 : 0);
-  const totalCount = Math.max(task.subtasks.length, 1);
-  const progress = Math.round((doneCount / totalCount) * 100);
-  const noSubtasks = !task.subtasks.length;
-
+  const isActive  = task.id === state.activeTaskId;
+  const doneCount = task.subtasks.length ? task.subtasks.filter((s) => s.done).length : (task.done ? 1 : 0);
+  const totalCount= Math.max(task.subtasks.length, 1);
+  const progress  = Math.round((doneCount / totalCount) * 100);
+  const hasSubs   = task.subtasks.length > 0;
   return `
-    <article class="task-card ${isActive ? 'active' : ''} ${task.done ? 'done' : ''}" data-task-id="${task.id}">
+    <article class="task-card ${isActive ? 'active':''} ${task.done ? 'done':''}" data-task-id="${task.id}">
       <div class="task-head">
         <div class="task-title-wrap">
           <div class="task-title">
             ${isActive ? '<span class="active-badge">X</span>' : ''}
-            <span>${escapeHtml(task.title)}</span>
+            <span class="task-title-text">${escapeHtml(task.title)}</span>
           </div>
           <div class="task-meta">
-            <span class="energy-pill ${task.energy}">${energyLabel(task.energy)}</span>
+            <span class="priority-pill ${task.priority}">${priorityLabel(task.priority)}</span>
             <span class="count-pill">${doneCount}/${totalCount} pasos</span>
           </div>
         </div>
         <div class="task-actions">
-          <button class="ghost-btn" data-action="active-task" type="button">Poner X</button>
-          <button class="ghost-btn" data-action="edit-task" type="button">Editar</button>
-          <button class="danger-btn" data-action="delete-task" type="button">Borrar</button>
+          <button class="secondary-btn small" data-action="active-task"   type="button">Poner X</button>
+          <button class="ghost-btn small"     data-action="priority-task" type="button">Prioridad</button>
+          <button class="ghost-btn small"     data-action="edit-task"     type="button">Editar</button>
+          <button class="danger-btn small"    data-action="delete-task"   type="button">Borrar</button>
         </div>
       </div>
-
-      <div class="focus-progress" aria-hidden="true">
+      <div class="progress-block" aria-hidden="true">
         <div class="progress-bar"><span style="width:${progress}%"></span></div>
       </div>
-
-      ${noSubtasks ? `
-        <ul class="subtask-list">
-          <li class="subtask-row ${isActive ? 'active' : ''} ${task.done ? 'done' : ''}">
-            <div class="subtask-main">
-              <span class="check-dot">✓</span>
-              <span class="subtask-text">Tarea completa</span>
-            </div>
-            <div class="subtask-actions">
-              <button class="secondary-btn" data-action="toggle-task" type="button">${task.done ? 'Reabrir' : 'Completar'}</button>
-            </div>
-          </li>
-        </ul>` : `
-        <ul class="subtask-list">
-          ${task.subtasks.map(subtaskTemplate(task)).join('')}
-        </ul>`}
-    </article>
-  `;
-}
-
-function subtaskTemplate(task) {
-  return (subtask) => {
-    const isActiveStar = subtask.id === task.currentSubtaskId && !subtask.done;
-    const isVisibleCurrent = task.id === state.activeTaskId && isActiveStar;
-    return `
-      <li class="subtask-row ${isVisibleCurrent ? 'active' : ''} ${subtask.done ? 'done' : ''}" data-subtask-id="${subtask.id}">
-        <div class="subtask-main">
-          <span class="check-dot">✓</span>
-          ${isActiveStar ? '<span class="subtask-star">*</span>' : ''}
-          <span class="subtask-text">${escapeHtml(subtask.title)}</span>
+      ${hasSubs
+        ? `<ul class="subtask-list">${task.subtasks.map((s) => subtaskTemplate(task, s)).join('')}</ul>`
+        : `<div class="empty-task-note">Esta tarea no tiene subtareas. Puedes completarla como bloque o dividirla abajo.</div>
+           <ul class="subtask-list" aria-label="Acciones de tarea">
+             <li class="subtask-row ${isActive?'active':''} ${task.done?'done':''}">
+               <div class="subtask-main"><span class="check-dot">✓</span><span class="subtask-text">Tarea completa</span></div>
+               <div class="subtask-actions">
+                 <button class="secondary-btn small" data-action="toggle-task" type="button">${task.done?'Reabrir':'Completar'}</button>
+               </div>
+             </li>
+           </ul>`
+      }
+      <form class="inline-subtask-form" data-subtask-form>
+        <label>Agregar subtarea a esta tarea</label>
+        <div class="inline-input-row">
+          <input name="subtask" type="text" placeholder="Ej: primer paso concreto" autocomplete="off" />
+          <button class="secondary-btn" type="submit">+ Subtarea</button>
         </div>
-        <div class="subtask-actions">
-          <button class="secondary-btn" data-action="toggle-subtask" type="button">${subtask.done ? 'Reabrir' : 'Listo'}</button>
-          <button class="ghost-btn" data-action="active-subtask" type="button">Poner *</button>
-          <button class="ghost-btn" data-action="edit-subtask" type="button">Editar</button>
-          <button class="danger-btn" data-action="delete-subtask" type="button">×</button>
+      </form>
+      <div class="task-footer">
+        <span class="muted">Orden de rotación</span>
+        <div class="task-order-actions">
+          <button class="ghost-btn small" data-action="move-up"   type="button" aria-label="Subir tarea">↑</button>
+          <button class="ghost-btn small" data-action="move-down" type="button" aria-label="Bajar tarea">↓</button>
         </div>
-      </li>
-    `;
-  };
+      </div>
+    </article>`;
 }
 
-function bindTaskBoardEvents() {
-  els.taskBoard.removeEventListener('click', handleBoardClick);
-  els.taskBoard.addEventListener('click', handleBoardClick);
+function subtaskTemplate(task, sub) {
+  const isCurrent = sub.id === task.currentSubtaskId && !sub.done;
+  const isVisible = task.id === state.activeTaskId && isCurrent;
+  return `
+    <li class="subtask-row ${isVisible?'active':''} ${sub.done?'done':''}" data-subtask-id="${sub.id}">
+      <div class="subtask-main">
+        <span class="check-dot">✓</span>
+        ${isCurrent ? '<span class="subtask-star">*</span>' : ''}
+        <span class="subtask-text">${escapeHtml(sub.title)}</span>
+      </div>
+      <div class="subtask-actions">
+        <button class="secondary-btn small" data-action="toggle-subtask"  type="button">${sub.done?'Reabrir':'Listo'}</button>
+        <button class="ghost-btn small"     data-action="active-subtask"  type="button">Poner *</button>
+        <button class="ghost-btn small"     data-action="edit-subtask"    type="button">Editar</button>
+        <button class="danger-btn small"    data-action="delete-subtask"  type="button">×</button>
+      </div>
+    </li>`;
 }
 
-function handleBoardClick(event) {
-  const button = event.target.closest('button[data-action]');
-  if (!button) return;
+function priorityLabel(p) { return { urgent:'Urgente', high:'Alta', normal:'Normal' }[p] || 'Urgente'; }
 
-  const taskEl = button.closest('[data-task-id]');
-  const subtaskEl = button.closest('[data-subtask-id]');
-  const taskId = taskEl?.dataset.taskId;
-  const subtaskId = subtaskEl?.dataset.subtaskId;
-  const action = button.dataset.action;
+// ─── FOCUS MODE ──────────────────────────────────────────────────────────────
 
-  if (action === 'active-task') setActiveTask(taskId);
-  if (action === 'active-subtask') setActiveSubtask(taskId, subtaskId);
-  if (action === 'toggle-task') toggleTaskDone(taskId);
-  if (action === 'toggle-subtask') toggleSubtaskDone(taskId, subtaskId);
-  if (action === 'delete-task') deleteTask(taskId);
-  if (action === 'delete-subtask') deleteSubtask(taskId, subtaskId);
-  if (action === 'edit-task') editTask(taskId);
-  if (action === 'edit-subtask') editSubtask(taskId, subtaskId);
+function toggleFocusMode() {
+  document.body.classList.toggle('focus-only');
+  els.focusModeBtn.textContent = document.body.classList.contains('focus-only') ? 'Ver tablero' : 'Modo foco';
 }
 
-function energyLabel(energy) {
-  const labels = { baja: 'Energía baja', media: 'Energía media', alta: 'Energía alta' };
-  return labels[energy] ?? 'Energía media';
-}
+// ─── TIMER ───────────────────────────────────────────────────────────────────
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-}
-
-function copySummary() {
-  const lines = [];
-  lines.push(`Seguimiento de tareas del día · ${new Date().toLocaleDateString('es-CO')}`);
-  state.tasks.forEach((task, index) => {
-    const activeMark = task.id === state.activeTaskId ? ' x' : '';
-    const doneMark = task.done ? ' ✓' : '';
-    lines.push(`${index}. ${task.title}${activeMark}${doneMark}`);
-    task.subtasks.forEach(subtask => {
-      const subActive = subtask.id === task.currentSubtaskId && !subtask.done ? ' *' : '';
-      const subDone = subtask.done ? ' ✓' : '';
-      lines.push(`- ${subtask.title}${subActive}${subDone}`);
-    });
-  });
-
-  navigator.clipboard.writeText(lines.join('\n'))
-    .then(() => showToast('Resumen copiado. Bloc de notas va a sentir celos.'))
-    .catch(() => showToast('No pude copiarlo. El navegador se puso intenso.'));
-}
-
-function resetDay() {
-  const ok = confirm('¿Crear una jornada nueva? Esto limpia las tareas actuales de este navegador.');
-  if (!ok) return;
-  const currentSettings = { ...defaultState.settings, ...(state.settings || {}) };
-  state = { ...structuredClone(defaultState), settings: currentSettings };
-  saveState();
-  syncSettingsInputs();
-  applyTheme();
-  render();
-  showToast('Jornada nueva. Tabula rasa, pero sin latín innecesario.');
-}
-
-function toggleZenMode() {
-  document.body.classList.toggle('zen');
-  const isZen = document.body.classList.contains('zen');
-  els.toggleZenBtn.textContent = isZen ? 'Ver tablero' : 'Modo foco';
+function applyTimerPreset(v) {
+  const m = clampMinutes(v);
+  timerState.durationMinutes = m;
+  timerState.seconds         = m * 60;
+  timerState.running         = false;
+  stopTimer();
+  els.timerToggleBtn.textContent = 'Iniciar';
+  updateTimerDisplay();
+  updateTimerUrgency();
+  saveTimer();
+  showToast(`Sprint ajustado a ${m} minutos.`);
 }
 
 function toggleTimer() {
   if (!timerState.seconds) timerState.seconds = timerState.durationMinutes * 60;
   timerState.running = !timerState.running;
-  if (timerState.running) {
-    startTimer();
-    els.timerToggleBtn.textContent = 'Pausar';
-  } else {
-    stopTimer();
-    els.timerToggleBtn.textContent = 'Iniciar';
-  }
+  if (timerState.running) { startTimer(); els.timerToggleBtn.textContent = 'Pausar'; }
+  else                    { stopTimer();  els.timerToggleBtn.textContent = 'Iniciar'; }
 }
 
 function startTimer() {
@@ -877,17 +924,15 @@ function startTimer() {
       timerState.running = false;
       stopTimer();
       els.timerToggleBtn.textContent = 'Iniciar';
-      handleTimerFinished();
+      showToast('⏱ Sprint terminado. Mira la X y decide: completar o rotar.');
     }
     updateTimerDisplay();
+    updateTimerUrgency();
     saveTimer();
   }, 1000);
 }
 
-function stopTimer() {
-  if (timerInterval) clearInterval(timerInterval);
-  timerInterval = null;
-}
+function stopTimer() { if (timerInterval) clearInterval(timerInterval); timerInterval = null; }
 
 function resetTimer() {
   timerState.seconds = timerState.durationMinutes * 60;
@@ -895,43 +940,38 @@ function resetTimer() {
   stopTimer();
   els.timerToggleBtn.textContent = 'Iniciar';
   updateTimerDisplay();
+  updateTimerUrgency();
   saveTimer();
 }
 
-function handleTimerFinished() {
-  if (timerState.endAction === 'rotate') {
-    rotateOnly();
-    showToast('Tiempo cumplido: X rotada sin completar. Prudente, como raro.');
-    return;
-  }
-
-  if (timerState.endAction === 'complete') {
-    completeCurrentStepAndRotateTask();
-    showToast('Tiempo cumplido: paso completado y X rotada.');
-    return;
-  }
-
-  showToast('Sprint terminado. Estira las manos, humano de oficina 🎧');
-}
-
 function updateTimerDisplay() {
-  const minutes = Math.floor(timerState.seconds / 60).toString().padStart(2, '0');
-  const seconds = (timerState.seconds % 60).toString().padStart(2, '0');
-  els.timerDisplay.textContent = `${minutes}:${seconds}`;
+  const m = Math.floor(timerState.seconds / 60).toString().padStart(2, '0');
+  const s = (timerState.seconds % 60).toString().padStart(2, '0');
+  els.timerDisplay.textContent = `${m}:${s}`;
 }
 
-let toastTimeout;
-function showToast(message) {
-  els.toast.textContent = message;
+function updateTimerUrgency() {
+  const el  = els.timerDisplay;
+  const pct = timerState.durationMinutes > 0
+    ? timerState.seconds / (timerState.durationMinutes * 60) : 1;
+  el.classList.remove('timer-ok', 'timer-warn', 'timer-critical');
+  if (!timerState.running)  { el.classList.add('timer-ok');       return; }
+  if (pct <= 0.15)            el.classList.add('timer-critical');
+  else if (pct <= 0.35)       el.classList.add('timer-warn');
+  else                        el.classList.add('timer-ok');
+}
+
+// ─── TOAST ───────────────────────────────────────────────────────────────────
+
+function showToast(msg) {
+  els.toast.textContent = msg;
   els.toast.classList.add('show');
   clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => els.toast.classList.remove('show'), 2600);
+  toastTimeout = setTimeout(() => els.toast.classList.remove('show'), 2800);
 }
 
+// ─── PWA ─────────────────────────────────────────────────────────────────────
+
 function setupPwa() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {
-      // Si se abre localmente con file://, el service worker no aplica. No pasa nada.
-    });
-  }
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
 }

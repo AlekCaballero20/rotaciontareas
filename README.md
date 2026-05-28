@@ -1,33 +1,49 @@
-# Rotador de Tareas · Alek
+# Rotador urgente · Alek
 
-App web estática para llevar tareas diarias con una lógica tipo Bloc de notas mejorado, pero sin castigo visual de Windows 98.
+Versión simplificada para seguimiento rápido de tareas urgentes del día.
 
-- `x` marca la tarea principal donde vas.
-- `*` marca la subtarea activa de cada tarea.
-- **Completar paso** termina la subtarea activa de la tarea con `x`, mueve el `*` a la siguiente subtarea de esa misma tarea y rota la `x` a la siguiente tarea pendiente.
-- **Solo rotar** mueve la `x` a la siguiente tarea sin completar nada.
-- Importa texto pegado desde Bloc de notas.
-- Guarda todo en `localStorage`, así que no necesita backend.
-- Incluye PWA básica para instalar en el navegador.
-- Tiene temporizador ajustable de 1 a 180 minutos.
-- Permite elegir qué pasa cuando termina el temporizador: solo avisar, rotar la X o completar paso y rotar.
-- Incluye temas visuales: Alek tech, Claro sobrio y Musicala suave.
+## Qué incluye
 
-## Cómo usar
+- Un solo estilo claro y sobrio: blanco, grises, negro y azul suave.
+- Tareas con prioridad: Urgente, Alta y Normal.
+- Subtareas agregables directamente dentro de cada tarjeta de tarea.
+- X para marcar la tarea activa.
+- * para marcar la subtarea activa dentro de la tarea.
+- Botón **Completar paso** que marca el paso actual y rota a la siguiente tarea pendiente.
+- Botón **Rotar X** para cambiar de tarea sin completar nada.
+- Reordenamiento de tareas con flechas ↑ ↓ para definir el orden de rotación.
+- Filtros: Todas, Pendientes, Urgentes, Actual y Listas.
+- Búsqueda rápida.
+- Importación desde bloc de notas.
+- Copiar resumen del día.
+- Modo foco.
+- Temporizador sencillo con presets de 10, 15, 25 y 45 minutos.
+- Barra de racha con pasos seguidos, XP y combo.
+- Microinteracciones al completar pasos: +XP flotante, confeti sutil y animaciones de progreso.
+- Colores de urgencia en el temporizador cuando queda poco tiempo.
+- Guardado local en el navegador usando localStorage.
+- PWA básica con manifest y service worker.
 
-Abre `index.html` en el navegador o sube la carpeta completa a GitHub Pages.
-
-## Formato de importación
+## Formato para importar
 
 ```txt
-Seguimiento de tareas del día
-0. Apps personal y laboral
-1. Vacante
-- LinkedIn
-- Computrabajo *
-2. Marketing x
-- Configuración de campañas
-- Creación de contenido *
+1. Marketing x
+- Revisar presupuesto *
+- Crear anuncio
+2. Ventas
+- Responder leads
 ```
 
-Las líneas numeradas se interpretan como tareas. Las líneas con `-` o `•` se interpretan como subtareas de la tarea anterior.
+- `x` al final marca la tarea activa.
+- `*` al final marca la subtarea activa.
+- Los números crean tareas.
+- Los guiones crean subtareas dentro de la última tarea.
+
+## Archivos
+
+- `index.html`
+- `styles.css`
+- `app.js`
+- `manifest.webmanifest`
+- `sw.js`
+- `icon.svg`

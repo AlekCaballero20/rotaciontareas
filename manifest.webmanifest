@@ -1,17 +1,16 @@
 {
-  "name": "Rotador de Tareas · Alek",
-  "short_name": "Rotador Alek",
-  "description": "App ligera para rotar tareas y subtareas del día con modo enfoque, temporizador ajustable y temas visuales.",
+  "name": "Rotador urgente · Alek",
+  "short_name": "Rotador urgente",
+  "description": "Seguimiento rápido de tareas urgentes con subtareas y rotación diaria.",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#0b1220",
-  "theme_color": "#0b1220",
+  "background_color": "#f6f7f9",
+  "theme_color": "#f6f7f9",
   "icons": [
     {
       "src": "icon.svg",
       "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/svg+xml"
     }
   ]
 }
