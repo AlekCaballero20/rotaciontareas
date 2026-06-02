@@ -383,6 +383,16 @@ function getCurrentSubtask(task) {
   return task.subtasks.find((s) => s.id === task.currentSubtaskId) || null;
 }
 
+function advanceCurrentSubtaskPointer(task) {
+  if (!task || !task.subtasks.length) return false;
+  const pending = task.subtasks.filter((s) => !s.done);
+  if (pending.length < 2) return false;
+  const idx = pending.findIndex((s) => s.id === task.currentSubtaskId);
+  task.currentSubtaskId = pending[(idx + 1) % pending.length].id;
+  task.done = false;
+  return true;
+}
+
 function findNextPendingTask(startAfterId = null) {
   const pending = state.tasks.filter((t) => !t.done);
   if (!pending.length) return null;
@@ -474,6 +484,8 @@ function completeCurrentStepAndRotate() {
 
 function rotateOnly() {
   ensureActivePointer();
+  const current = getTask(state.activeTaskId);
+  advanceCurrentSubtaskPointer(current);
   const next = findNextPendingTask(state.activeTaskId);
   if (!next) { showToast('No hay pendientes para rotar. Inusual, casi mítico.'); render(); return; }
   state.activeTaskId = next.id;
