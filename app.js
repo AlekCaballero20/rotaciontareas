@@ -42,6 +42,8 @@ const els = {
   timerDisplay:      $('#timerDisplay'),
   timerToggleBtn:    $('#timerToggleBtn'),
   timerResetBtn:     $('#timerResetBtn'),
+  timerCustomForm:   $('#timerCustomForm'),
+  timerCustomInput:  $('#timerCustomInput'),
   statTasks:         $('#statTasks'),
   statPendingSteps:  $('#statPendingSteps'),
   statDoneSteps:     $('#statDoneSteps'),
@@ -114,6 +116,12 @@ function bindEvents() {
   els.timerResetBtn.addEventListener('click', resetTimer);
   document.querySelectorAll('[data-minutes]').forEach((btn) =>
     btn.addEventListener('click', () => applyTimerPreset(btn.dataset.minutes)));
+  els.timerCustomForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (els.timerCustomInput.value.trim() === '') return;
+    applyTimerPreset(els.timerCustomInput.value);
+    els.timerCustomInput.value = '';
+  });
 
   els.importBtn.addEventListener('click', openImportModal);
   els.closeImportBtn.addEventListener('click', closeImportModal);

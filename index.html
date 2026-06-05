@@ -74,6 +74,13 @@
           <button type="button" data-minutes="25">25</button>
           <button type="button" data-minutes="45">45</button>
         </div>
+        <form class="timer-custom" id="timerCustomForm">
+          <label for="timerCustomInput">Minutos personalizados</label>
+          <div class="inline-input-row">
+            <input id="timerCustomInput" type="number" min="1" max="180" step="1" inputmode="numeric" placeholder="Ej: 30" autocomplete="off" />
+            <button class="secondary-btn small" type="submit">Ajustar</button>
+          </div>
+        </form>
       </section>
 
       <section class="stats-grid" aria-label="Resumen">
