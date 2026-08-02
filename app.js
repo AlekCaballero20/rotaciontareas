@@ -6,6 +6,8 @@ const CONFETTI_COLORS  = ['#2563eb','#7c3aed','#ec4899','#f59e0b','#10b981','#0e
 
 const sampleText = `1. Marketing x
 - Revisar presupuesto de Google Ads *
+-- Abrir el panel de campañas
+-- Comparar gasto vs meta
 - Crear anuncio
 - Responder leads
 2. Musicala
@@ -343,6 +345,11 @@ function migrateStateShape() {
       id:    s.id    || uid('sub'),
       title: s.title || 'Subtarea sin nombre',
       done:  Boolean(s.done),
+      minis: (s.minis || []).map((m) => ({
+        id:    m.id    || uid('mini'),
+        title: m.title || 'Minitarea sin nombre',
+        done:  Boolean(m.done),
+      })),
     })),
   }));
   if (!['all','pending','urgent','active','done'].includes(state.filter)) state.filter = 'all';
@@ -363,8 +370,13 @@ function clampMinutes(v) {
 function createTask(title, priority = 'urgent') {
   return { id: uid('task'), title, priority: normalizePriority(priority), done: false, currentSubtaskId: null, subtasks: [] };
 }
-function createSubtask(title) { return { id: uid('sub'), title, done: false }; }
+function createSubtask(title) { return { id: uid('sub'), title, done: false, minis: [] }; }
+function createMini(title)    { return { id: uid('mini'), title, done: false }; }
 function getTask(id) { return state.tasks.find((t) => t.id === id) || null; }
+function getSubtask(taskId, subtaskId) {
+  return getTask(taskId)?.subtasks.find((s) => s.id === subtaskId) || null;
+}
+function getMinis(sub) { return sub?.minis || []; }
 
 // ─── POINTERS ────────────────────────────────────────────────────────────────
 
@@ -459,6 +471,81 @@ function addSubtaskToTask(taskId, title) {
   showToast('Subtarea agregada donde sí era. Milagro de UX.');
 }
 
+function setSubtaskDone(sub, done) {
+  sub.done = done;
+  getMinis(sub).forEach((m) => { m.done = done; });
+}
+
+// Una subtarea se cierra sola cuando todas sus minitareas están listas.
+function syncSubtaskFromMinis(sub) {
+  const minis = getMinis(sub);
+  if (!minis.length) return false;
+  const allDone = minis.every((m) => m.done);
+  if (allDone === sub.done) return false;
+  sub.done = allDone;
+  return true;
+}
+
+function addMiniToSubtask(taskId, subtaskId, title) {
+  const clean = title.trim();
+  const task  = getTask(taskId);
+  const sub   = getSubtask(taskId, subtaskId);
+  if (!task || !sub) return;
+  if (!clean) {
+    showToast('La minitarea también necesita texto. Nada de pasos fantasma.');
+    return;
+  }
+  sub.minis = getMinis(sub);
+  sub.minis.push(createMini(clean));
+  sub.done  = false;
+  task.done = false;
+  if (!task.currentSubtaskId) task.currentSubtaskId = sub.id;
+  ensureTaskSubtaskPointer(task);
+  ensureActivePointer();
+  saveState();
+  render();
+  showToast('Minitarea agregada. Dividir para vencer.');
+}
+
+function toggleMiniDone(taskId, subtaskId, miniId) {
+  const task = getTask(taskId);
+  const sub  = getSubtask(taskId, subtaskId);
+  const mini = getMinis(sub).find((m) => m.id === miniId);
+  if (!task || !sub || !mini) return;
+  mini.done = !mini.done;
+  const closed = syncSubtaskFromMinis(sub);
+  if (!sub.done) task.done = false;
+  ensureTaskSubtaskPointer(task);
+  ensureActivePointer();
+  saveState();
+  render();
+  if (closed && sub.done) showToast('✓ Subtarea cerrada: todas sus minitareas están listas.');
+}
+
+function editMini(taskId, subtaskId, miniId) {
+  const mini = getMinis(getSubtask(taskId, subtaskId)).find((m) => m.id === miniId);
+  if (!mini) return;
+  const next = prompt('Editar minitarea:', mini.title);
+  if (next === null) return;
+  const clean = next.trim();
+  if (!clean) return;
+  mini.title = clean;
+  saveState();
+  render();
+}
+
+function deleteMini(taskId, subtaskId, miniId) {
+  const task = getTask(taskId);
+  const sub  = getSubtask(taskId, subtaskId);
+  if (!task || !sub) return;
+  sub.minis = getMinis(sub).filter((m) => m.id !== miniId);
+  syncSubtaskFromMinis(sub);
+  ensureTaskSubtaskPointer(task);
+  ensureActivePointer();
+  saveState();
+  render();
+}
+
 function completeCurrentStepAndRotate() {
   const prevProgress = getTotalSteps()
     ? Math.round((getDoneSteps() / getTotalSteps()) * 100) : 0;
@@ -470,7 +557,7 @@ function completeCurrentStepAndRotate() {
   const sub        = getCurrentSubtask(task);
   const wasLastSub = sub && task.subtasks.filter((s) => !s.done).length === 1;
 
-  if (sub) { sub.done = true; ensureTaskSubtaskPointer(task); }
+  if (sub) { setSubtaskDone(sub, true); ensureTaskSubtaskPointer(task); }
   else      { task.done = true; }
 
   const nextTask     = findNextPendingTask(task.id);
@@ -529,7 +616,7 @@ function toggleTaskDone(taskId) {
   if (!task) return;
   const next = !task.done;
   task.done = next;
-  task.subtasks.forEach((s) => { s.done = next; });
+  task.subtasks.forEach((s) => setSubtaskDone(s, next));
   task.currentSubtaskId = next ? null : task.subtasks.find((s) => !s.done)?.id || null;
   ensureActivePointer();
   saveState();
@@ -540,7 +627,7 @@ function toggleSubtaskDone(taskId, subtaskId) {
   const task = getTask(taskId);
   const sub  = task?.subtasks.find((s) => s.id === subtaskId);
   if (!task || !sub) return;
-  sub.done = !sub.done;
+  setSubtaskDone(sub, !sub.done);
   if (!sub.done) { task.done = false; if (!task.currentSubtaskId) task.currentSubtaskId = sub.id; }
   ensureTaskSubtaskPointer(task);
   ensureActivePointer();
@@ -620,6 +707,7 @@ function handleBoardClick(e) {
   if (!btn) return;
   const taskId = btn.closest('[data-task-id]')?.dataset.taskId;
   const subId  = btn.closest('[data-subtask-id]')?.dataset.subtaskId;
+  const miniId = btn.closest('[data-mini-id]')?.dataset.miniId;
   const map = {
     'active-task':    () => setActiveTask(taskId),
     'toggle-task':    () => toggleTaskDone(taskId),
@@ -632,11 +720,24 @@ function handleBoardClick(e) {
     'toggle-subtask': () => toggleSubtaskDone(taskId, subId),
     'edit-subtask':   () => editSubtask(taskId, subId),
     'delete-subtask': () => deleteSubtask(taskId, subId),
+    'toggle-mini':    () => toggleMiniDone(taskId, subId, miniId),
+    'edit-mini':      () => editMini(taskId, subId, miniId),
+    'delete-mini':    () => deleteMini(taskId, subId, miniId),
   };
   map[btn.dataset.action]?.();
 }
 
 function handleBoardSubmit(e) {
+  const miniForm = e.target.closest('[data-mini-form]');
+  if (miniForm) {
+    e.preventDefault();
+    const input = miniForm.querySelector('input[name="mini"]');
+    const subId = miniForm.closest('[data-subtask-id]')?.dataset.subtaskId;
+    addMiniToSubtask(miniForm.closest('[data-task-id]')?.dataset.taskId, subId, input.value);
+    // el board se vuelve a renderizar: hay que recuperar el input nuevo
+    els.taskBoard.querySelector(`[data-subtask-id="${subId}"] input[name="mini"]`)?.focus();
+    return;
+  }
   const form = e.target.closest('[data-subtask-form]');
   if (!form) return;
   e.preventDefault();
@@ -662,13 +763,23 @@ function parseList(raw) {
   const tasks = [];
   let curr = null, activeTaskId = null, firstStarId = null;
 
+  let currSub = null;
+
   for (const line of lines) {
-    const num = line.match(/^\d+[.)]\s*(.+)$/);
-    const bul = line.match(/^[-•*]\s*(.+)$/);
+    const num  = line.match(/^\d+[.)]\s*(.+)$/);
+    const mini = line.match(/^(?:--|—|••)\s*(.+)$/);
+    const bul  = line.match(/^[-•*]\s*(.+)$/);
+    if (mini && currSub) {
+      const m = parseMarkerText(mini[1]);
+      if (!m.text) continue;
+      currSub.minis.push(createMini(m.text));
+      continue;
+    }
     if (num) {
       const m = parseMarkerText(num[1]);
       if (!m.text) continue;
       curr = createTask(m.text, m.priority);
+      currSub = null;
       tasks.push(curr);
       if (m.hasX) activeTaskId = curr.id;
       if (m.hasStar && !firstStarId) firstStarId = curr.id;
@@ -677,10 +788,11 @@ function parseList(raw) {
     if (bul) {
       const m = parseMarkerText(bul[1]);
       if (!m.text) continue;
-      if (!curr) { curr = createTask(m.text, m.priority); tasks.push(curr); }
+      if (!curr) { curr = createTask(m.text, m.priority); tasks.push(curr); currSub = null; }
       else {
         const sub = createSubtask(m.text);
         curr.subtasks.push(sub);
+        currSub = sub;
         if (m.hasStar) { curr.currentSubtaskId = sub.id; if (!firstStarId) firstStarId = curr.id; }
         if (m.hasX) activeTaskId = curr.id;
       }
@@ -689,6 +801,7 @@ function parseList(raw) {
     const m = parseMarkerText(line);
     if (!m.text) continue;
     curr = createTask(m.text, m.priority);
+    currSub = null;
     tasks.push(curr);
     if (m.hasX) activeTaskId = curr.id;
     if (m.hasStar && !firstStarId) firstStarId = curr.id;
@@ -743,8 +856,10 @@ function copySummary() {
   const lines = [`Seguimiento urgente · ${date}`];
   state.tasks.forEach((t, i) => {
     lines.push(`${i+1}. ${t.title}${t.id === state.activeTaskId ? ' x':''}${t.done ? ' ✓':''}`);
-    t.subtasks.forEach((s) =>
-      lines.push(`- ${s.title}${s.id === t.currentSubtaskId && !s.done ? ' *':''}${s.done ? ' ✓':''}`));
+    t.subtasks.forEach((s) => {
+      lines.push(`- ${s.title}${s.id === t.currentSubtaskId && !s.done ? ' *':''}${s.done ? ' ✓':''}`);
+      getMinis(s).forEach((m) => lines.push(`-- ${m.title}${m.done ? ' ✓':''}`));
+    });
   });
   navigator.clipboard.writeText(lines.join('\n'))
     .then(() => showToast('Resumen copiado. El bloc de notas puede respirar.'))
@@ -763,8 +878,11 @@ function taskMatchesFilter(t) {
 function taskMatchesSearch(t) {
   const q = state.search.toLowerCase();
   if (!q) return true;
-  return [t.title, priorityLabel(t.priority), ...t.subtasks.map((s) => s.title)]
-    .join(' ').toLowerCase().includes(q);
+  return [
+    t.title,
+    priorityLabel(t.priority),
+    ...t.subtasks.flatMap((s) => [s.title, ...getMinis(s).map((m) => m.title)]),
+  ].join(' ').toLowerCase().includes(q);
 }
 
 function getTotalSteps() { return state.tasks.reduce((n,t) => n + Math.max(t.subtasks.length,1), 0); }
@@ -801,8 +919,12 @@ function renderFocus() {
   els.activeBadge.textContent = sub ? 'X + *' : 'X actual';
   els.activeBadge.classList.add('active');
   els.currentTaskTitle.textContent = task.title;
+  const minis     = getMinis(sub);
+  const miniHint  = minis.length
+    ? ` <span class="mini-count-pill">${minis.filter((m) => m.done).length}/${minis.length} mini</span>`
+    : '';
   els.currentStepTitle.innerHTML   = sub
-    ? `<strong>*</strong> ${escapeHtml(sub.title)}`
+    ? `<strong>*</strong> ${escapeHtml(sub.title)}${miniHint}`
     : 'Sin subtareas: puedes completar esta tarea como bloque o agregarle pasos.';
   els.completeCurrentBtn.disabled = els.rotateBtn.disabled = els.activeSubtaskInput.disabled = false;
 }
@@ -888,18 +1010,47 @@ function taskTemplate(task) {
 function subtaskTemplate(task, sub) {
   const isCurrent = sub.id === task.currentSubtaskId && !sub.done;
   const isVisible = task.id === state.activeTaskId && isCurrent;
+  const minis     = getMinis(sub);
+  const miniDone  = minis.filter((m) => m.done).length;
   return `
-    <li class="subtask-row ${isVisible?'active':''} ${sub.done?'done':''}" data-subtask-id="${sub.id}">
-      <div class="subtask-main">
-        <span class="check-dot">✓</span>
-        ${isCurrent ? '<span class="subtask-star">*</span>' : ''}
-        <span class="subtask-text">${escapeHtml(sub.title)}</span>
+    <li class="subtask-item" data-subtask-id="${sub.id}">
+      <div class="subtask-row ${isVisible?'active':''} ${sub.done?'done':''}">
+        <div class="subtask-main">
+          <span class="check-dot">✓</span>
+          ${isCurrent ? '<span class="subtask-star">*</span>' : ''}
+          <span class="subtask-text">${escapeHtml(sub.title)}</span>
+          ${minis.length ? `<span class="mini-count-pill">${miniDone}/${minis.length} mini</span>` : ''}
+        </div>
+        <div class="subtask-actions">
+          <button class="secondary-btn small" data-action="toggle-subtask"  type="button">${sub.done?'Reabrir':'Listo'}</button>
+          <button class="ghost-btn small"     data-action="active-subtask"  type="button">Poner *</button>
+          <button class="ghost-btn small"     data-action="edit-subtask"    type="button">Editar</button>
+          <button class="danger-btn small"    data-action="delete-subtask"  type="button">×</button>
+        </div>
       </div>
-      <div class="subtask-actions">
-        <button class="secondary-btn small" data-action="toggle-subtask"  type="button">${sub.done?'Reabrir':'Listo'}</button>
-        <button class="ghost-btn small"     data-action="active-subtask"  type="button">Poner *</button>
-        <button class="ghost-btn small"     data-action="edit-subtask"    type="button">Editar</button>
-        <button class="danger-btn small"    data-action="delete-subtask"  type="button">×</button>
+      <div class="mini-block">
+        ${minis.length
+          ? `<ul class="mini-list">${minis.map(miniTemplate).join('')}</ul>`
+          : ''}
+        <form class="inline-mini-form" data-mini-form>
+          <div class="inline-input-row">
+            <input name="mini" type="text" placeholder="Minitarea de este paso" autocomplete="off" />
+            <button class="ghost-btn small" type="submit">+ Mini</button>
+          </div>
+        </form>
+      </div>
+    </li>`;
+}
+
+function miniTemplate(mini) {
+  return `
+    <li class="mini-row ${mini.done?'done':''}" data-mini-id="${mini.id}">
+      <button class="mini-check" data-action="toggle-mini" type="button"
+              aria-label="${mini.done?'Reabrir':'Completar'} minitarea">${mini.done?'✓':''}</button>
+      <span class="mini-text">${escapeHtml(mini.title)}</span>
+      <div class="mini-actions">
+        <button class="ghost-btn small"  data-action="edit-mini"   type="button">Editar</button>
+        <button class="danger-btn small" data-action="delete-mini" type="button">×</button>
       </div>
     </li>`;
 }

@@ -451,6 +451,71 @@ textarea {
 .subtask-star { font-weight: 950; }
 .subtask-text { overflow-wrap: anywhere; }
 .subtask-actions { gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ── Minitareas (tercer nivel) ─────────────────────────────────────────────── */
+.subtask-item { display: grid; gap: 6px; }
+.mini-count-pill {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.mini-block {
+  display: grid;
+  gap: 6px;
+  margin-left: 18px;
+  padding-left: 12px;
+  border-left: 2px dashed var(--line-strong);
+}
+.mini-list {
+  list-style: none;
+  display: grid;
+  gap: 5px;
+  padding: 0;
+  margin: 0;
+}
+.mini-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.mini-check {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  min-height: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  color: var(--green);
+  font-size: 0.75rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.mini-row.done .mini-check { background: var(--green-soft); border-color: #bbf7d0; }
+.mini-text { flex: 1; min-width: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
+.mini-row.done .mini-text { text-decoration: line-through; color: var(--muted-2); }
+.mini-actions { display: flex; align-items: center; gap: 6px; }
+.mini-actions button { min-height: 32px; padding: 4px 9px; font-size: 0.75rem; }
+.inline-mini-form input {
+  min-height: 38px;
+  font-size: 0.9rem;
+  background: var(--surface-soft);
+}
+.inline-mini-form button { min-height: 38px; white-space: nowrap; }
 .inline-subtask-form {
   display: grid;
   gap: 8px;

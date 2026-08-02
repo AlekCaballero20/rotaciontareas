@@ -102,6 +102,7 @@
         <h3>Cómo usarlo</h3>
         <p><strong>X</strong> es la tarea que toca ahora.</p>
         <p><strong>*</strong> es el paso activo dentro de esa tarea.</p>
+        <p>Cada paso puede tener <strong>minitareas</strong>: al marcarlas todas, el paso se cierra solo.</p>
         <p>Completar paso marca el avance y rota a la siguiente tarea pendiente.</p>
       </section>
     </aside>
@@ -168,8 +169,8 @@
         </div>
         <button class="icon-btn" id="closeImportBtn" type="button" aria-label="Cerrar">×</button>
       </div>
-      <p class="muted">Usa números para tareas, guiones para subtareas, <strong>x</strong> para la tarea activa y <strong>*</strong> para el paso activo.</p>
-      <textarea id="importTextarea" spellcheck="false" placeholder="1. Marketing x&#10;- Revisar presupuesto *&#10;- Crear anuncio&#10;2. Ventas&#10;- Responder leads"></textarea>
+      <p class="muted">Usa números para tareas, un guion para subtareas y <strong>--</strong> para minitareas. <strong>x</strong> marca la tarea activa y <strong>*</strong> el paso activo.</p>
+      <textarea id="importTextarea" spellcheck="false" placeholder="1. Marketing x&#10;- Revisar presupuesto *&#10;-- Abrir el panel&#10;-- Comparar gasto vs meta&#10;- Crear anuncio&#10;2. Ventas&#10;- Responder leads"></textarea>
       <div class="modal-actions">
         <button class="ghost-btn" id="sampleBtn" type="button">Cargar ejemplo</button>
         <button class="primary-btn" id="parseImportBtn" type="button">Importar</button>

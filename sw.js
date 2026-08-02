@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rotador-urgente-alek-v3';
+const CACHE_NAME = 'rotador-urgente-alek-v4';
 const APP_SHELL = [
   './',
   './index.html',
